@@ -38,8 +38,21 @@ app.whenReady().then(() => {
     return await db.addProduct(product);
   });
 
-  ipcMain.handle('update-product', async (event, id, product) => {
-    return await db.updateProduct(id, product);
+  ipcMain.handle('update-product', async (event, { id, product }) => {
+    console.log('🔧 update-product called with:', { id, product });
+
+    if (!product || typeof product !== 'object') {
+      const msg = '❌ update-product error: Product is undefined or not an object';
+      console.error(msg);
+      throw new Error(msg);
+    }
+
+    try {
+      return await db.updateProduct(id, product);
+    } catch (error) {
+      console.error('❌ update-product DB error:', error);
+      throw error;
+    }
   });
 
   ipcMain.handle('delete-product', async (event, id) => {

@@ -1,22 +1,38 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 function Sidebar({ role }) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const toggleSidebar = () => setIsCollapsed(!isCollapsed);
+
+  const menuItems = [
+    { name: 'Dashboard', path: '/' },
+    { name: 'Inventory', path: '/inventory' },
+    { name: 'Billing', path: '/billing' },
+    { name: 'Customers', path: '/customers' },
+    { name: 'Purchase', path: '/purchase' },
+    { name: 'Reports', path: '/reports' },
+    { name: 'Daybook', path: '/daybook' },
+    ...(role === 'admin' ? [{ name: 'Settings', path: '/settings' }] : [])
+  ];
+
   return (
-    <div className="sidebar">
-      <h2 className="title">ERP Accounting</h2>
+    <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
+      <button className="toggle-btn" onClick={toggleSidebar}>
+        {isCollapsed ? '☰' : '⮜'}
+      </button>
+      {!isCollapsed && <h2 className="title">ERP Accounting</h2>}
+
       <nav>
         <ul className="menu">
-          <li><Link to="/" className="menu-link">Dashboard</Link></li>
-          <li><Link to="/inventory" className="menu-link">Inventory</Link></li>
-          <li><Link to="/billing" className="menu-link">Billing</Link></li>
-          <li><Link to="/customers" className="menu-link">Customers</Link></li>
-          <li><Link to="/purchase" className="menu-link">Purchase</Link></li>
-          <li><Link to="/reports" className="menu-link">Reports</Link></li>
-          <li><Link to="/daybook" className="menu-link">Daybook</Link></li>
-          {role === 'admin' && (
-            <li><Link to="/settings" className="menu-link">Settings</Link></li>
-          )}
+          {menuItems.map(item => (
+            <li key={item.path}>
+              <Link to={item.path} className="menu-link">
+                {isCollapsed ? item.name[0] : item.name}
+              </Link>
+            </li>
+          ))}
         </ul>
       </nav>
 
@@ -28,9 +44,24 @@ function Sidebar({ role }) {
           height: 100vh;
           padding: 20px;
           box-sizing: border-box;
+          transition: width 0.3s ease;
+        }
+        .collapsed {
+          width: 70px;
+          padding: 20px 10px;
+        }
+        .toggle-btn {
+          background: #4a5568;
+          color: white;
+          border: none;
+          padding: 6px 12px;
+          cursor: pointer;
+          margin-bottom: 20px;
+          border-radius: 4px;
+          font-size: 16px;
         }
         .title {
-          font-size: 24px;
+          font-size: 20px;
           font-weight: bold;
           margin-bottom: 24px;
         }
@@ -48,6 +79,8 @@ function Sidebar({ role }) {
           text-decoration: none;
           border-radius: 4px;
           transition: background-color 0.2s ease;
+          white-space: nowrap;
+          overflow: hidden;
         }
         .menu-link:hover {
           background-color: #4a5568;

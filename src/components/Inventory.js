@@ -17,7 +17,10 @@ function Inventory() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (editingId) {
-      await window.ipc.invoke('update-product', editingId, form);
+      await window.ipc.invoke('update-product', {
+        id: editingId,
+        product: form,
+      });
       setEditingId(null);
     } else {
       await window.ipc.invoke('add-product', form);

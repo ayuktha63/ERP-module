@@ -148,7 +148,13 @@ class DB {
 
   async addCustomer(customer) {
     try {
-      return await this.dbRun('INSERT INTO customers (name, mobile, gstin) VALUES (?, ?, ?)', [customer.name, customer.mobile, customer.gstin]);
+      const existing = await this.dbGet('SELECT id FROM customers WHERE mobile = ?', [customer.mobile]);
+      if (existing) {
+        return { existing: true, id: existing.id };
+      }
+      const result = await this.dbRun('INSERT INTO customers (name, mobile, gstin) VALUES (?, ?, ?)', [customer.name, customer.mobile, customer.gstin]);
+      const inserted = await this.dbGet('SELECT id FROM customers WHERE mobile = ?', [customer.mobile]);
+      return { existing: false, id: inserted.id };
     } catch (err) {
       console.error('Add customer error:', err);
       throw err;
@@ -205,9 +211,27 @@ class DB {
     }
   }
 
-  async getPurchases() {
+  async getPurchases(filters = {}) {
     try {
-      return await this.dbAll('SELECT * FROM purchases');
+      let query = 'SELECT * FROM purchases WHERE 1=1';
+      const params = [];
+
+      if (filters.vendor) {
+        query += ' AND vendor LIKE ?';
+        params.push(`%${filters.vendor}%`);
+      }
+      if (filters.from) {
+        query += ' AND date >= ?';
+        params.push(filters.from);
+      }
+      if (filters.to) {
+        query += ' AND date <= ?';
+        params.push(filters.to);
+      }
+
+      query += ' ORDER BY date DESC';
+
+      return await this.dbAll(query, params);
     } catch (err) {
       console.error('Get purchases error:', err);
       return [];

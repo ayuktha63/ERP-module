@@ -1,16 +1,19 @@
+// ✅ Place this in your components folder: Billing.js
+
 import React, { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
 
 function Billing() {
   const [products, setProducts] = useState([]);
   const [rows, setRows] = useState([{ name: '', quantity: 1 }]);
-  const [customer, setCustomer] = useState({ name: '', mobile: '', gstin: '' });
+  const [customer, setCustomer] = useState({ name: '', mobile: '' });
   const [discount, setDiscount] = useState(0);
   const [gst, setGst] = useState(18);
   const [settings, setSettings] = useState({});
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [suggestions, setSuggestions] = useState({});
-  const suggestionRefs = useRef([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState({});
+  const inputRefs = useRef([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -18,6 +21,16 @@ function Billing() {
       setSettings(await window.ipc.invoke('get-settings'));
     };
     fetchData();
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'F5') {
+        e.preventDefault();
+        setShowCustomerPrompt(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const handleRowChange = (index, field, value) => {
@@ -29,6 +42,7 @@ function Billing() {
         p.name.toLowerCase().includes(value.toLowerCase())
       );
       setSuggestions(prev => ({ ...prev, [index]: filtered }));
+      setSelectedSuggestionIndex(prev => ({ ...prev, [index]: 0 }));
 
       const match = products.find(p => p.name.toLowerCase() === value.toLowerCase());
       if (match) {
@@ -51,6 +65,29 @@ function Billing() {
 
     if (field === 'name' && value && index === rows.length - 1) {
       setRows([...updated, { name: '', quantity: 1 }]);
+    }
+  };
+
+  const handleKeyDown = (e, index) => {
+    const list = suggestions[index] || [];
+    if (list.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedSuggestionIndex(prev => ({
+        ...prev,
+        [index]: Math.min((prev[index] || 0) + 1, list.length - 1),
+      }));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedSuggestionIndex(prev => ({
+        ...prev,
+        [index]: Math.max((prev[index] || 0) - 1, 0),
+      }));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const selected = list[selectedSuggestionIndex[index] || 0];
+      if (selected) handleSuggestionClick(index, selected);
     }
   };
 
@@ -80,9 +117,15 @@ function Billing() {
 
     const customerData = { name: customer.name, mobile: customer.mobile };
     let customerId = customer.id;
+
     if (!customerId) {
       const result = await window.ipc.invoke('add-customer', customerData);
-      customerId = result.lastInsertRowid;
+      if (result && result.lastInsertRowid) {
+        customerId = result.lastInsertRowid;
+      } else {
+        alert("Failed to save customer.");
+        return;
+      }
     }
 
     const bill = {
@@ -98,8 +141,9 @@ function Billing() {
     generatePDF(bill);
 
     setRows([{ name: '', quantity: 1 }]);
-    setCustomer({ name: '', mobile: '', gstin: '' });
+    setCustomer({ name: '', mobile: '' });
     setDiscount(0);
+    setShowCustomerPrompt(false);
   };
 
   const generatePDF = (bill) => {
@@ -133,18 +177,26 @@ function Billing() {
         </thead>
         <tbody>
           {rows.map((row, idx) => (
-            <tr key={idx} style={{ position: 'relative' }}>
+            <tr key={idx}>
               <td style={{ position: 'relative' }}>
                 <input
+                  ref={el => inputRefs.current[idx] = el}
                   type="text"
                   value={row.name}
                   onChange={(e) => handleRowChange(idx, 'name', e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, idx)}
                   className="input name-input"
                 />
                 {suggestions[idx]?.length > 0 && (
                   <ul className="suggestion-box">
                     {suggestions[idx].slice(0, 5).map((p, i) => (
-                      <li key={i} onClick={() => handleSuggestionClick(idx, p)}>
+                      <li
+                        key={i}
+                        onClick={() => handleSuggestionClick(idx, p)}
+                        style={{
+                          backgroundColor: selectedSuggestionIndex[idx] === i ? '#d0e7ff' : 'white',
+                        }}
+                      >
                         {p.name}
                       </li>
                     ))}
@@ -166,7 +218,6 @@ function Billing() {
         </tbody>
       </table>
 
-      {/* Bottom bar */}
       <div className="bottom-fixed-bar">
         <input
           type="number"
@@ -176,10 +227,9 @@ function Billing() {
           className="input short-input"
         />
         <span className="total-display">Total: ₹{calculateTotal()}</span>
-        <button className="btn" onClick={() => setShowCustomerPrompt(true)}>Submit</button>
+        <button className="btn" onClick={() => setShowCustomerPrompt(true)}>Submit (F5)</button>
       </div>
 
-      {/* Customer Prompt */}
       {showCustomerPrompt && (
         <div className="modal">
           <div className="modal-content">
@@ -209,9 +259,8 @@ function Billing() {
           font-family: 'Segoe UI', sans-serif;
           padding-bottom: 100px;
           width: 100%;
-          box-sizing: border-box;
+          max-width: 100%;
         }
-
 
         .heading {
           font-size: 28px;
@@ -282,7 +331,10 @@ function Billing() {
           background: #fff;
           padding: 30px;
           border-radius: 8px;
-          width: 300px;
+          width: 320px;
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
         }
 
         .suggestion-box {

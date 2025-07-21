@@ -9,9 +9,12 @@ function Purchase() {
   });
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
+  const [searchParams, setSearchParams] = useState({ vendor: '', from: '', to: '' });
+  const [purchaseResults, setPurchaseResults] = useState([]);
 
   useEffect(() => {
     window.ipc.invoke('get-products').then(setProducts);
+    fetchPurchases();
   }, []);
 
   const addItem = () => {
@@ -36,6 +39,12 @@ function Purchase() {
       date: new Date().toISOString().split('T')[0],
       items: [],
     });
+    fetchPurchases();
+  };
+
+  const fetchPurchases = async () => {
+    const results = await window.ipc.invoke('get-purchases', searchParams);
+    setPurchaseResults(results);
   };
 
   return (
@@ -104,6 +113,49 @@ function Purchase() {
       <button onClick={savePurchase} style={{ ...buttonStyle, marginTop: '16px' }}>
         Save Purchase
       </button>
+
+      <h3 style={{ marginTop: '32px', fontWeight: 'bold' }}>Search Purchases</h3>
+      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', marginBottom: '8px' }}>
+        <input
+          type="text"
+          placeholder="Vendor Name"
+          value={searchParams.vendor}
+          onChange={(e) => setSearchParams({ ...searchParams, vendor: e.target.value })}
+          style={inputStyle}
+        />
+        <input
+          type="date"
+          value={searchParams.from}
+          onChange={(e) => setSearchParams({ ...searchParams, from: e.target.value })}
+          style={inputStyle}
+        />
+        <input
+          type="date"
+          value={searchParams.to}
+          onChange={(e) => setSearchParams({ ...searchParams, to: e.target.value })}
+          style={inputStyle}
+        />
+        <button onClick={fetchPurchases} style={buttonStyle}>Search</button>
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#f3f4f6' }}>
+            <th style={cellStyle}>Date</th>
+            <th style={cellStyle}>Vendor</th>
+            <th style={cellStyle}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {purchaseResults.map((p, i) => (
+            <tr key={i}>
+              <td style={cellStyle}>{p.date}</td>
+              <td style={cellStyle}>{p.vendor}</td>
+              <td style={cellStyle}>₹{p.total}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

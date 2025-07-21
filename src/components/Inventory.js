@@ -14,8 +14,23 @@ function Inventory() {
     setProducts(products);
   };
 
+  const isFormValid = () => {
+    const { code, name, category, unit, purchase_price, sale_price, stock } = form;
+    return (
+      code.trim() !== '' &&
+      name.trim() !== '' &&
+      category.trim() !== '' &&
+      unit.trim() !== '' &&
+      purchase_price > 0 &&
+      sale_price > 0 &&
+      stock >= 0
+    );
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!isFormValid()) return;
+
     if (editingId) {
       await window.ipc.invoke('update-product', {
         id: editingId,
@@ -42,60 +57,95 @@ function Inventory() {
   return (
     <div>
       <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>Inventory Management</h2>
-      <form onSubmit={handleSubmit} style={{ marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-        <input
-          type="text"
-          value={form.code}
-          onChange={(e) => setForm({ ...form, code: e.target.value })}
-          placeholder="Product Code"
-          style={inputStyle}
-        />
-        <input
-          type="text"
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-          placeholder="Product Name"
-          style={inputStyle}
-        />
-        <input
-          type="text"
-          value={form.category}
-          onChange={(e) => setForm({ ...form, category: e.target.value })}
-          placeholder="Category"
-          style={inputStyle}
-        />
-        <select
-          value={form.unit}
-          onChange={(e) => setForm({ ...form, unit: e.target.value })}
-          style={inputStyle}
-        >
-          <option value="PCS">PCS</option>
-          <option value="KG">KG</option>
-        </select>
-        <input
-          type="number"
-          value={form.purchase_price}
-          onChange={(e) => setForm({ ...form, purchase_price: parseFloat(e.target.value) })}
-          placeholder="Purchase Price"
-          style={inputStyle}
-        />
-        <input
-          type="number"
-          value={form.sale_price}
-          onChange={(e) => setForm({ ...form, sale_price: parseFloat(e.target.value) })}
-          placeholder="Sale Price"
-          style={inputStyle}
-        />
-        <input
-          type="number"
-          value={form.stock}
-          onChange={(e) => setForm({ ...form, stock: parseInt(e.target.value) })}
-          placeholder="Stock"
-          style={inputStyle}
-        />
-        <button type="submit" style={{ padding: '8px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '4px' }}>
-          {editingId ? 'Update' : 'Add'} Product
-        </button>
+      <form onSubmit={handleSubmit} style={{ marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={inputGroupStyle}>
+          <label htmlFor="code">Product Code</label>
+          <input
+            id="code"
+            type="text"
+            value={form.code}
+            onChange={(e) => setForm({ ...form, code: e.target.value })}
+            style={inputStyle}
+          />
+        </div>
+        <div style={inputGroupStyle}>
+          <label htmlFor="name">Product Name</label>
+          <input
+            id="name"
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            style={inputStyle}
+          />
+        </div>
+        <div style={inputGroupStyle}>
+          <label htmlFor="category">Category</label>
+          <input
+            id="category"
+            type="text"
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            style={inputStyle}
+          />
+        </div>
+        <div style={inputGroupStyle}>
+          <label htmlFor="unit">Unit</label>
+          <select
+            id="unit"
+            value={form.unit}
+            onChange={(e) => setForm({ ...form, unit: e.target.value })}
+            style={inputStyle}
+          >
+            <option value="PCS">PCS</option>
+            <option value="KG">KG</option>
+          </select>
+        </div>
+        <div style={inputGroupStyle}>
+          <label htmlFor="purchase_price">Purchase Price</label>
+          <input
+            id="purchase_price"
+            type="number"
+            value={form.purchase_price}
+            onChange={(e) => setForm({ ...form, purchase_price: parseFloat(e.target.value) || 0 })}
+            style={inputStyle}
+          />
+        </div>
+        <div style={inputGroupStyle}>
+          <label htmlFor="sale_price">Sale Price</label>
+          <input
+            id="sale_price"
+            type="number"
+            value={form.sale_price}
+            onChange={(e) => setForm({ ...form, sale_price: parseFloat(e.target.value) || 0 })}
+            style={inputStyle}
+          />
+        </div>
+        <div style={inputGroupStyle}>
+          <label htmlFor="stock">Stock</label>
+          <input
+            id="stock"
+            type="number"
+            value={form.stock}
+            onChange={(e) => setForm({ ...form, stock: parseInt(e.target.value) || 0 })}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+          <button
+            type="submit"
+            disabled={!isFormValid()}
+            style={{
+              padding: '8px',
+              backgroundColor: isFormValid() ? '#3b82f6' : '#9ca3af',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isFormValid() ? 'pointer' : 'not-allowed'
+            }}
+          >
+            {editingId ? 'Update' : 'Add'} Product
+          </button>
+        </div>
       </form>
 
       <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
@@ -138,11 +188,16 @@ function Inventory() {
   );
 }
 
+const inputGroupStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: '120px',
+};
+
 const inputStyle = {
   padding: '8px',
   border: '1px solid #ccc',
   borderRadius: '4px',
-  minWidth: '120px',
 };
 
 const cellStyle = {

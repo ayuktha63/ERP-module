@@ -176,15 +176,40 @@ class DB {
 
   async saveBill(bill) {
     try {
+      // Validate stock before saving
+      for (const item of bill.items) {
+        const product = await this.dbGet('SELECT stock FROM products WHERE id = ?', [item.id]);
+        if (!product) {
+          throw new Error(`Product with ID ${item.id} not found`);
+        }
+        if (product.stock < item.quantity) {
+          throw new Error(`Insufficient stock for product ${item.name}: ${product.stock} available, ${item.quantity} requested`);
+        }
+      }
+
+      // Start transaction
+      await this.dbRun('BEGIN TRANSACTION');
+      
+      // Insert bill
       const result = await this.dbRun(
         'INSERT INTO bills (customer_id, items, discount, gst, total, date) VALUES (?, ?, ?, ?, ?, ?)',
         [bill.customer_id, JSON.stringify(bill.items), bill.discount, bill.gst, bill.total, bill.date]
       );
+
+      // Update stock
       for (const item of bill.items) {
         await this.dbRun('UPDATE products SET stock = stock - ? WHERE id = ?', [item.quantity, item.id]);
       }
+
+      // Commit transaction
+      await this.dbRun('COMMIT');
+      
       return result;
     } catch (err) {
+      // Rollback transaction on error
+      await this.dbRun('ROLLBACK').catch(rollbackErr => {
+        console.error('Rollback error:', rollbackErr);
+      });
       console.error('Save bill error:', err);
       throw err;
     }

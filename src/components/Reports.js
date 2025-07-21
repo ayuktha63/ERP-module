@@ -4,11 +4,9 @@ import jsPDF from 'jspdf';
 
 function Reports() {
   const [reports, setReports] = useState([]);
-  const [filters, setFilters] = useState({ dateFrom: '', dateTo: '', productId: '' });
-  const [products, setProducts] = useState([]);
+  const [filters, setFilters] = useState({ dateFrom: '', dateTo: '', mobile: '' });
 
   useEffect(() => {
-    window.ipc.invoke('get-products').then(setProducts);
     fetchReports();
   }, [filters]);
 
@@ -69,8 +67,11 @@ function Reports() {
             fontSize: '14px'
           }}
         />
-        <select
-          onChange={(e) => setFilters({ ...filters, productId: e.target.value })}
+        <input
+          type="text"
+          placeholder="Search by Phone"
+          value={filters.mobile}
+          onChange={(e) => setFilters({ ...filters, mobile: e.target.value })}
           style={{
             padding: '8px',
             border: '1px solid #ccc',
@@ -78,12 +79,7 @@ function Reports() {
             marginRight: '8px',
             fontSize: '14px'
           }}
-        >
-          <option value="">All Products</option>
-          {products.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+        />
         <button
           onClick={exportToExcel}
           style={{

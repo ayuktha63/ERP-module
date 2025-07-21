@@ -3,7 +3,7 @@ import jsPDF from 'jspdf';
 
 function Billing() {
   const [products, setProducts] = useState([]);
-  const [rows, setRows] = useState([{ name: '', quantity: 1 }]);
+  const [rows, setRows] = useState([{ name: '', quantity: 0 }]);
   const [customer, setCustomer] = useState({ name: '', mobile: '', gstin: '' });
   const [discount, setDiscount] = useState(0);
   const [gst, setGst] = useState(18);
@@ -15,8 +15,16 @@ function Billing() {
 
   useEffect(() => {
     const fetchData = async () => {
-      setProducts(await window.ipc.invoke('get-products'));
-      setSettings(await window.ipc.invoke('get-settings'));
+      try {
+        const [productsData, settingsData] = await Promise.all([
+          window.ipc.invoke('get-products'),
+          window.ipc.invoke('get-settings'),
+        ]);
+        setProducts(productsData || []);
+        setSettings(settingsData || {});
+      } catch (error) {
+        console.error('Error fetching initial data:', error);
+      }
     };
     fetchData();
 
@@ -33,9 +41,8 @@ function Billing() {
 
   const handleRowChange = (index, field, value) => {
     const updated = [...rows];
-    updated[index][field] = value;
-
     if (field === 'name') {
+      updated[index][field] = value;
       const filtered = products.filter(p =>
         p.name.toLowerCase().includes(value.toLowerCase())
       );
@@ -48,21 +55,26 @@ function Billing() {
           ...updated[index],
           ...match,
           name: match.name,
-          quantity: updated[index].quantity || 1,
+          quantity: updated[index].quantity || 0,
         };
         setSuggestions(prev => ({ ...prev, [index]: [] }));
       }
 
       if (value.trim() === '') {
-        updated[index] = { name: '', quantity: 1 };
+        updated[index] = { name: '', quantity: 0 };
         setSuggestions(prev => ({ ...prev, [index]: [] }));
+      }
+    } else if (field === 'quantity') {
+      const newQuantity = value === '' ? 0 : parseInt(value, 10);
+      if (!isNaN(newQuantity) && newQuantity >= 0) {
+        updated[index][field] = newQuantity;
       }
     }
 
     setRows(updated);
 
     if (field === 'name' && value && index === rows.length - 1) {
-      setRows([...updated, { name: '', quantity: 1 }]);
+      setRows([...updated, { name: '', quantity: 0 }]);
     }
   };
 
@@ -95,7 +107,7 @@ function Billing() {
       ...updated[index],
       ...product,
       name: product.name,
-      quantity: 1,
+      quantity: updated[index].quantity || 0,
     };
     setRows(updated);
     setSuggestions(prev => ({ ...prev, [index]: [] }));
@@ -112,14 +124,28 @@ function Billing() {
     return gstinRegex.test(gstin);
   };
 
+  const validateBillItems = (items) => {
+    return items.every(item => 
+      item.name && 
+      item.id && 
+      Number.isFinite(item.sale_price) && 
+      Number.isFinite(item.quantity) && 
+      item.quantity > 0 // Require quantity > 0 for valid items
+    );
+  };
+
   const handleMobileChange = async (mobile) => {
     setCustomer(prev => ({ ...prev, mobile }));
     if (validateMobile(mobile)) {
-      const existingCustomer = await window.ipc.invoke('find-customer', mobile);
-      if (existingCustomer) {
-        setCustomer(prev => ({ ...prev, name: existingCustomer.name || '', id: existingCustomer.id, gstin: existingCustomer.gstin || '' }));
-      } else {
-        setCustomer(prev => ({ ...prev, name: '', id: null, gstin: '' }));
+      try {
+        const existingCustomer = await window.ipc.invoke('find-customer', mobile);
+        if (existingCustomer) {
+          setCustomer(prev => ({ ...prev, name: existingCustomer.name || '', id: existingCustomer.id, gstin: existingCustomer.gstin || '' }));
+        } else {
+          setCustomer(prev => ({ ...prev, name: '', id: null, gstin: '' }));
+        }
+      } catch (error) {
+        console.error('Error finding customer:', error.message, error.stack);
       }
     } else {
       setCustomer(prev => ({ ...prev, name: '', id: null, gstin: '' }));
@@ -127,8 +153,9 @@ function Billing() {
   };
 
   const calculateTotal = () => {
-    const subtotal = rows.reduce((sum, item) => sum + (item.sale_price || 0) * (item.quantity || 0), 0);
+    const subtotal = rows.reduce((sum, item) => sum + ((item.sale_price || 0) * (item.quantity || 0)), 0);
     const gstAmount = subtotal * (gst / 100);
+    console.log('Calculate Total:', { subtotal, gst, gstAmount, discount });
     return (subtotal + gstAmount - discount).toFixed(2);
   };
 
@@ -143,8 +170,14 @@ function Billing() {
       return;
     }
 
+    const billItems = rows.filter(row => row.name && Number.isFinite(row.sale_price) && row.quantity > 0);
+    if (!billItems.length || !validateBillItems(billItems)) {
+      alert("Please add at least one valid item with name, price, and quantity greater than 0.");
+      return;
+    }
+
     const customerData = { 
-      name: customer.name ? customer.name.trim() : `Customer_${customer.mobile}`, // Default name if empty
+      name: customer.name ? customer.name.trim() : `Customer_${customer.mobile}`,
       mobile: customer.mobile,
       gstin: customer.gstin || ''
     };
@@ -156,18 +189,20 @@ function Billing() {
         if (result && (result.id || result.lastInsertRowid)) {
           customerId = result.id || result.lastInsertRowid;
         } else {
-          throw new Error('Failed to create customer');
+          console.error('Customer creation failed: Invalid response', result);
+          alert('Error creating customer. Please try again.');
+          return;
         }
       } catch (error) {
-        console.error('Error adding customer:', error);
-        alert('Error creating customer. Please try again.');
+        console.error('Error adding customer:', error.message, error.stack);
+        alert(`Error creating customer: ${error.message}. Please try again.`);
         return;
       }
     }
 
     const bill = {
       customer_id: customerId,
-      items: rows.filter(row => row.name && row.sale_price),
+      items: billItems,
       discount,
       gst,
       total: calculateTotal(),
@@ -177,33 +212,111 @@ function Billing() {
     try {
       await window.ipc.invoke('save-bill', bill);
       generatePDF(bill);
-      setRows([{ name: '', quantity: 1 }]);
+      setRows([{ name: '', quantity: 0 }]);
       setCustomer({ name: '', mobile: '', id: null, gstin: '' });
       setDiscount(0);
       setShowCustomerPrompt(false);
     } catch (error) {
-      console.error('Error saving bill:', error);
-      alert('Error generating invoice. Please try again.');
+      console.error('Error saving bill:', error.message, error.stack);
+      alert(`Error generating invoice: ${error.message}. Please try again.`);
     }
   };
 
   const generatePDF = (bill) => {
     const doc = new jsPDF();
-    doc.text(settings.business_name || 'My Business', 10, 10);
-    doc.text(`Invoice #${bill.id || Math.floor(Math.random() * 10000)}`, 10, 20);
-    doc.text(`Customer: ${customer.name || 'Customer_' + customer.mobile} (${customer.mobile})`, 10, 30);
+    
+    // Set document properties
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 15;
+    const maxWidth = pageWidth - 2 * margin;
+
+    // Header with block color
+    doc.setFillColor(0, 102, 204); // Blue header
+    doc.rect(0, 0, pageWidth, 30, 'F');
+    doc.setTextColor(255, 255, 255); // White text for header
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text(settings.business_name || 'My Business', margin, 20);
+    doc.setFontSize(10);
+    doc.text(`Invoice #${bill.id || Math.floor(Math.random() * 10000)}`, pageWidth - margin - 60, 20);
+    doc.setTextColor(0, 0, 0); // Reset to black text
+
+    // Invoice details
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
     let y = 40;
+    doc.text(`Date: ${bill.date}`, margin, y);
+    y += 10;
+    doc.text(`Customer: ${customer.name || 'Customer_' + customer.mobile} (${customer.mobile})`, margin, y);
+    y += 10;
     if (customer.gstin) {
-      doc.text(`GSTIN: ${customer.gstin}`, 10, y);
+      doc.text(`GSTIN: ${customer.gstin}`, margin, y);
       y += 10;
     }
-    bill.items.forEach(item => {
-      doc.text(`${item.name} x ${item.quantity}: ₹${(item.sale_price * item.quantity).toFixed(2)}`, 10, y);
+
+    // Manual table rendering
+    try {
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setFillColor(0, 102, 204);
+      doc.rect(margin, y, maxWidth, 10, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text('Item Name', margin + 2, y + 7);
+      doc.text('Quantity', margin + maxWidth * 0.4 + 2, y + 7);
+      doc.text('Unit Price', margin + maxWidth * 0.55 + 2, y + 7);
+      doc.text('Total', margin + maxWidth * 0.8 + 2, y + 7);
+      doc.setTextColor(0, 0, 0);
       y += 10;
-    });
-    doc.text(`Discount: ₹${discount}`, 10, y);
-    doc.text(`GST (${gst}%): ₹${(bill.total * (gst / 100)).toFixed(2)}`, 10, y + 10);
-    doc.text(`Total: ₹${bill.total}`, 10, y + 20);
+
+      bill.items.forEach((item, index) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        const rowColor = index % 2 === 0 ? [255, 255, 255] : [240, 240, 240];
+        doc.setFillColor(...rowColor);
+        doc.rect(margin, y, maxWidth, 10, 'F');
+        doc.text(item.name, margin + 2, y + 7);
+        doc.text(item.quantity.toString(), margin + maxWidth * 0.4 + 2, y + 7);
+        doc.text(`INR ${(item.sale_price || 0).toFixed(2)}`, margin + maxWidth * 0.55 + 2, y + 7);
+        doc.text(`INR ${((item.sale_price || 0) * item.quantity).toFixed(2)}`, margin + maxWidth * 0.8 + 2, y + 7);
+        y += 10;
+        doc.setLineWidth(0.1);
+        doc.setDrawColor(200, 200, 200);
+        doc.line(margin, y, margin + maxWidth, y);
+      });
+      y += 10;
+    } catch (error) {
+      console.error('Error rendering table:', error.message, error.stack);
+      doc.text('Error rendering items table', margin, y);
+      y += 10;
+    }
+
+    // Summary section
+    const subtotal = bill.items.reduce((sum, item) => sum + ((item.sale_price || 0) * item.quantity), 0);
+    const gstAmount = subtotal * (gst / 100);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Subtotal: INR ${subtotal.toFixed(2)}`, pageWidth - margin - 50, y);
+    y += 8;
+    doc.text(`Discount: INR ${discount.toFixed(2)}`, pageWidth - margin - 50, y);
+    y += 8;
+    doc.text(`GST (${gst}%): INR ${gstAmount.toFixed(2)}`, pageWidth - margin - 50, y);
+    y += 8;
+    doc.setFontSize(12);
+    doc.setFillColor(0, 102, 204);
+    doc.rect(pageWidth - margin - 50, y - 4, 50, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Total: INR ${bill.total}`, pageWidth - margin - 50, y);
+    doc.setTextColor(0, 0, 0);
+
+    // Footer
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "italic");
+    doc.text(settings.invoice_footer || 'Thank you for your business!', margin, pageHeight - margin);
+
+    // Save the PDF
     doc.save(`invoice_${bill.id || Date.now()}.pdf`);
   };
 
@@ -251,13 +364,14 @@ function Billing() {
               <td>
                 <input
                   type="number"
-                  value={row.quantity || 1}
-                  onChange={(e) => handleRowChange(idx, 'quantity', parseInt(e.target.value))}
+                  value={row.quantity || 0}
+                  onChange={(e) => handleRowChange(idx, 'quantity', e.target.value)}
                   className="input short-input"
+                  min="0"
                 />
               </td>
-              <td>₹{row.sale_price || 0}</td>
-              <td>₹{((row.sale_price || 0) * (row.quantity || 1)).toFixed(2)}</td>
+              <td>INR {(row.sale_price || 0).toFixed(2)}</td>
+              <td>INR {((row.sale_price || 0) * (row.quantity || 0)).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -270,8 +384,9 @@ function Billing() {
           onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
           placeholder="Discount"
           className="input short-input"
+          min="0"
         />
-        <span className="total-display">Total: ₹{calculateTotal()}</span>
+        <span className="total-display">Total: INR {calculateTotal()}</span>
         <button className="btn" onClick={() => setShowCustomerPrompt(true)}>Submit (F5)</button>
       </div>
 
@@ -418,6 +533,11 @@ function Billing() {
           cursor: pointer;
         }
 
+        .suggestion-box li {
+          padding: 8px;
+          cursor: pointer;
+        }
+        .suggestion-box li[data-hover="true"], 
         .suggestion-box li:hover {
           background: #f0f0f0;
         }

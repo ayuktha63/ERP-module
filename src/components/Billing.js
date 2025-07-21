@@ -1,12 +1,10 @@
-// ✅ Place this in your components folder: Billing.js
-
 import React, { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
 
 function Billing() {
   const [products, setProducts] = useState([]);
   const [rows, setRows] = useState([{ name: '', quantity: 1 }]);
-  const [customer, setCustomer] = useState({ name: '', mobile: '' });
+  const [customer, setCustomer] = useState({ name: '', mobile: '', gstin: '' });
   const [discount, setDiscount] = useState(0);
   const [gst, setGst] = useState(18);
   const [settings, setSettings] = useState({});
@@ -103,6 +101,31 @@ function Billing() {
     setSuggestions(prev => ({ ...prev, [index]: [] }));
   };
 
+  const validateMobile = (mobile) => {
+    const mobileRegex = /^[0-9]{10}$/;
+    return mobileRegex.test(mobile);
+  };
+
+  const validateGSTIN = (gstin) => {
+    if (!gstin) return true; // GSTIN is optional
+    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+    return gstinRegex.test(gstin);
+  };
+
+  const handleMobileChange = async (mobile) => {
+    setCustomer(prev => ({ ...prev, mobile }));
+    if (validateMobile(mobile)) {
+      const existingCustomer = await window.ipc.invoke('find-customer', mobile);
+      if (existingCustomer) {
+        setCustomer(prev => ({ ...prev, name: existingCustomer.name || '', id: existingCustomer.id, gstin: existingCustomer.gstin || '' }));
+      } else {
+        setCustomer(prev => ({ ...prev, name: '', id: null, gstin: '' }));
+      }
+    } else {
+      setCustomer(prev => ({ ...prev, name: '', id: null, gstin: '' }));
+    }
+  };
+
   const calculateTotal = () => {
     const subtotal = rows.reduce((sum, item) => sum + (item.sale_price || 0) * (item.quantity || 0), 0);
     const gstAmount = subtotal * (gst / 100);
@@ -110,20 +133,34 @@ function Billing() {
   };
 
   const handleSubmit = async () => {
-    if (!customer.name || !customer.mobile) {
-      alert("Please enter customer details.");
+    if (!validateMobile(customer.mobile)) {
+      alert("Please enter a valid 10-digit mobile number.");
       return;
     }
 
-    const customerData = { name: customer.name, mobile: customer.mobile };
+    if (!validateGSTIN(customer.gstin)) {
+      alert("Please enter a valid GSTIN or leave it empty.");
+      return;
+    }
+
+    const customerData = { 
+      name: customer.name ? customer.name.trim() : `Customer_${customer.mobile}`, // Default name if empty
+      mobile: customer.mobile,
+      gstin: customer.gstin || ''
+    };
     let customerId = customer.id;
 
     if (!customerId) {
-      const result = await window.ipc.invoke('add-customer', customerData);
-      if (result && result.lastInsertRowid) {
-        customerId = result.lastInsertRowid;
-      } else {
-        alert("Failed to save customer.");
+      try {
+        const result = await window.ipc.invoke('add-customer', customerData);
+        if (result && (result.id || result.lastInsertRowid)) {
+          customerId = result.id || result.lastInsertRowid;
+        } else {
+          throw new Error('Failed to create customer');
+        }
+      } catch (error) {
+        console.error('Error adding customer:', error);
+        alert('Error creating customer. Please try again.');
         return;
       }
     }
@@ -137,21 +174,29 @@ function Billing() {
       date: new Date().toISOString().split('T')[0]
     };
 
-    await window.ipc.invoke('save-bill', bill);
-    generatePDF(bill);
-
-    setRows([{ name: '', quantity: 1 }]);
-    setCustomer({ name: '', mobile: '' });
-    setDiscount(0);
-    setShowCustomerPrompt(false);
+    try {
+      await window.ipc.invoke('save-bill', bill);
+      generatePDF(bill);
+      setRows([{ name: '', quantity: 1 }]);
+      setCustomer({ name: '', mobile: '', id: null, gstin: '' });
+      setDiscount(0);
+      setShowCustomerPrompt(false);
+    } catch (error) {
+      console.error('Error saving bill:', error);
+      alert('Error generating invoice. Please try again.');
+    }
   };
 
   const generatePDF = (bill) => {
     const doc = new jsPDF();
     doc.text(settings.business_name || 'My Business', 10, 10);
     doc.text(`Invoice #${bill.id || Math.floor(Math.random() * 10000)}`, 10, 20);
-    doc.text(`Customer: ${customer.name} (${customer.mobile})`, 10, 30);
+    doc.text(`Customer: ${customer.name || 'Customer_' + customer.mobile} (${customer.mobile})`, 10, 30);
     let y = 40;
+    if (customer.gstin) {
+      doc.text(`GSTIN: ${customer.gstin}`, 10, y);
+      y += 10;
+    }
     bill.items.forEach(item => {
       doc.text(`${item.name} x ${item.quantity}: ₹${(item.sale_price * item.quantity).toFixed(2)}`, 10, y);
       y += 10;
@@ -236,19 +281,37 @@ function Billing() {
             <h3>Enter Customer Details</h3>
             <input
               type="text"
-              placeholder="Name"
+              placeholder="Mobile (10 digits)"
+              value={customer.mobile}
+              onChange={(e) => handleMobileChange(e.target.value)}
+              className="input"
+            />
+            <input
+              type="text"
+              placeholder="Name (optional)"
               value={customer.name}
               onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
               className="input"
             />
             <input
               type="text"
-              placeholder="Mobile"
-              value={customer.mobile}
-              onChange={(e) => setCustomer({ ...customer, mobile: e.target.value })}
+              placeholder="GSTIN (optional)"
+              value={customer.gstin}
+              onChange={(e) => setCustomer({ ...customer, gstin: e.target.value })}
               className="input"
             />
-            <button className="btn" onClick={handleSubmit}>Generate Invoice</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+              <button
+                className="btn"
+                onClick={() => setShowCustomerPrompt(false)}
+                style={{ backgroundColor: '#ccc', color: '#000' }}
+              >
+                Back
+              </button>
+              <button className="btn" onClick={handleSubmit}>
+                Generate Invoice
+              </button>
+            </div>
           </div>
         </div>
       )}

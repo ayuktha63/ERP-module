@@ -83,10 +83,9 @@ app.whenReady().then(() => {
     return await db.addPurchase(purchase);
   });
 
-ipcMain.handle('get-purchases', async (event, filters) => {
-  return await db.getPurchases(filters);
-});
-
+  ipcMain.handle('get-purchases', async () => {
+    return await db.getPurchases();
+  });
 
   ipcMain.handle('get-sales-report', async (event, filters) => {
     return await db.getSalesReport(filters);

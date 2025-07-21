@@ -85,12 +85,13 @@ class DB {
 
   async login(username, password) {
     try {
-      console.log('Attempting login for username:', username);
-      const user = await this.dbGet('SELECT * FROM users WHERE username = ? AND password = ?', [username, password]);
-      console.log('Login result:', user ? 'User found' : 'User not found');
+      const user = await this.dbGet(
+        'SELECT * FROM users WHERE username = ? AND password = ?',
+        [username, password]
+      );
       return user ? { id: user.id, role: user.role } : null;
     } catch (err) {
-      console.error('Login query error:', err);
+      console.error('Login error:', err);
       return null;
     }
   }
@@ -152,7 +153,10 @@ class DB {
       if (existing) {
         return { existing: true, id: existing.id };
       }
-      const result = await this.dbRun('INSERT INTO customers (name, mobile, gstin) VALUES (?, ?, ?)', [customer.name, customer.mobile, customer.gstin]);
+      const result = await this.dbRun(
+        'INSERT INTO customers (name, mobile, gstin) VALUES (?, ?, ?)',
+        [customer.name, customer.mobile, customer.gstin]
+      );
       const inserted = await this.dbGet('SELECT id FROM customers WHERE mobile = ?', [customer.mobile]);
       return { existing: false, id: inserted.id };
     } catch (err) {
@@ -230,7 +234,6 @@ class DB {
       }
 
       query += ' ORDER BY date DESC';
-
       return await this.dbAll(query, params);
     } catch (err) {
       console.error('Get purchases error:', err);

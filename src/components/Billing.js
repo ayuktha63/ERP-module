@@ -378,6 +378,7 @@ function Billing() {
       </table>
 
       <div className="bottom-fixed-bar">
+        <label className="discount-label">Discount:</label>
         <input
           type="number"
           value={discount}
@@ -467,6 +468,12 @@ function Billing() {
           width: 80px;
         }
 
+        .discount-label {
+          font-size: 16px;
+          font-weight: bold;
+          align-self: center;
+        }
+
         .bottom-fixed-bar {
           position: fixed;
           bottom: 0;
@@ -533,11 +540,6 @@ function Billing() {
           cursor: pointer;
         }
 
-        .suggestion-box li {
-          padding: 8px;
-          cursor: pointer;
-        }
-        .suggestion-box li[data-hover="true"], 
         .suggestion-box li:hover {
           background: #f0f0f0;
         }

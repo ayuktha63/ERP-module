@@ -437,7 +437,7 @@ function Billing() {
           padding: 20px 30px;
           font-family: 'Segoe UI', sans-serif;
           padding-bottom: 100px;
-          width: 100%;
+          width: 95%;
           max-width: 100%;
         }
 

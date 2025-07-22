@@ -85,7 +85,7 @@ function Settings() {
         .settings-wrapper {
           padding: 20px 30px;
           font-family: 'Segoe UI', sans-serif;
-          width: 100%;
+          width: 95%;
           max-width: 100%;
         }
 
